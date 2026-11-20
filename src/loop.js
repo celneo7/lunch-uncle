@@ -2,11 +2,13 @@ import { buildSystemPrompt } from "./prompt.js";
 import { toolDefinitions, executeTool } from "./tools.js";
 
 // TODO: set the base URL and model for your OpenAI-compatible provider.
-const LLM_BASE_URL = "TODO";
+const LLM_BASE_URL = "https://opencode.ai/zen/go/v1";
 const LLM_MODEL = "TODO";
 
 const LLM_TIMEOUT_MS = 20_000;
 const MAX_ROUNDS = 8;
+// Keep only the most recent messages so long chats do not grow without bound.
+const MAX_HISTORY_MESSAGES = 20;
 
 const FALLBACK_REPLY = "Just go Berseh Food Centre lah.";
 const FOOD_WORDS = /\b(eat|lunch|food|makan|hungry|restaurant|hawker)\b/i;
@@ -17,14 +19,16 @@ const FOOD_WORDS = /\b(eat|lunch|food|makan|hungry|restaurant|hawker)\b/i;
  * history is the prior conversation as OpenAI-style {role, content} messages.
  */
 export async function runLoop(history, message, env) {
-  // If the Places key is missing, Uncle cannot search, so give a safe answer.
-  if (!env.GOOGLE_PLACES_API_KEY || FOOD_WORDS.test(message)) {
+  // If the Places key is missing and the user wants food, Uncle cannot
+  // search, so give a safe answer. Rain and bus questions still go through.
+  if (!env.GOOGLE_PLACES_API_KEY && FOOD_WORDS.test(message)) {
+    console.error("GOOGLE_PLACES_API_KEY is not set; returning fallback reply");
     return FALLBACK_REPLY;
   }
 
   const messages = [
     { role: "system", content: buildSystemPrompt() },
-    ...history,
+    ...trimHistory(history),
     { role: "user", content: message },
   ];
 
@@ -32,8 +36,7 @@ export async function runLoop(history, message, env) {
   // so the OpenCode Go endpoint can route and cache consistently.
   const sessionId = crypto.randomUUID();
 
-  let round = 0;
-  while (round < MAX_ROUNDS) {
+  for (let round = 0; round < MAX_ROUNDS; round++) {
     const assistant = await callModel(messages, env, sessionId);
     messages.push(assistant);
 
@@ -79,6 +82,17 @@ async function callModel(messages, env, sessionId) {
 
   const data = await res.json();
   return data.choices[0].message;
+}
+
+/**
+ * Keep the last `max` messages of the client-supplied history.
+ * Anything that is not an array is treated as empty.
+ */
+export function trimHistory(history, max = MAX_HISTORY_MESSAGES) {
+  if (!Array.isArray(history) || max <= 0) {
+    return [];
+  }
+  return history.slice(-max);
 }
 
 function parseArgs(raw) {
