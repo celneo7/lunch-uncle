@@ -17,10 +17,12 @@ How you work:
 - Keep replies under 120 words.`;
 
 /**
- * Build the system prompt for one request.
+ * Build the system prompt.
+ *
+ * It must stay identical across requests so the provider can cache the
+ * prefix (persona + tool definitions). Put per-request data such as IDs or
+ * timestamps in logs or later messages, never here.
  */
 export function buildSystemPrompt() {
-  const requestId = crypto.randomUUID();
-  const now = new Date().toISOString();
-  return `Request ${requestId} at ${now}. ${PERSONA}`;
+  return PERSONA;
 }
